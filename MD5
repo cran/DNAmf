@@ -1,0 +1,16 @@
+3c1f60cdec07e76b31411ab11075f069 *DESCRIPTION
+02ba226af4f5b8988a3c0e2ef28e1493 *NAMESPACE
+f02cd1527f2b7e3189bff17b3637875f *R/DNAmf.R
+bb9938cbb1b87722a288ffa301ebc7cc *R/DNAmf_internal.R
+6cc0ad7e5821609a3f1818fff25465ad *R/GP.R
+74c228d88917aa4e6edaca16cd16f360 *R/GP_nonsep.R
+c27fb509b71bd04dcf64307333f7120e *R/functions.R
+1203634b652a23640406cbed7a41f030 *R/imputer.R
+8d1215ae37552225a37d721fababb2b9 *R/matGP.R
+9aefe61128f15cadde775b1645ece320 *R/nonsep_xifun.R
+fc1e880f57e6951a0fcf5521baa67aed *R/nonsep_zetafun.R
+7eb95ac8deb723f2ba58ea5ce9f0b437 *R/predict.DNAmf_nonsep.R
+402d00d1a4a4c2932c4f02575e681834 *man/DNAmf.Rd
+02c6cd5cb79996dad1ac407e2c37127b *man/closed_form.Rd
+e9b789c5d2a944fa218a5350135ff1eb *man/imputer.Rd
+07f6a27c3286a603674c67d88d95d232 *man/predict.Rd
