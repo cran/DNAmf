@@ -5,7 +5,7 @@
 #'
 #' @details For non-nested designs, pseudo-input locations \eqn{\widetilde{\mathcal{X}}_l}
 #' are constructed using the internal \code{makenested} function.
-#' The \code{imputer} function then imputes the corresponding pseudo outputs
+#' The \code{imputer_DNA} function then imputes the corresponding pseudo outputs
 #' \eqn{\widetilde{\mathbf{y}}_l = f_l(\widetilde{\mathcal{X}}_l)}
 #' by drawing samples from the conditional normal distribution,
 #' given fixed parameter estimates and previous-level outputs \eqn{Y_{-L}^{*(m-1)}},
@@ -26,18 +26,25 @@
 #'   \item \code{y_list}: An original outputs \eqn{\mathbf{y}_l}.
 #'   \item \code{y_tilde}: A newly imputed pseudo outputs \eqn{\widetilde{\mathbf{y}}_l}.
 #' }
-#' @usage imputer(XX, yy, kernel=kernel, t, pred1, fit2)
+#' @usage imputer_DNA(XX, yy, kernel=kernel, t, pred1, fit2)
 #' @export
 #'
 
-imputer <- function(XX, yy, kernel=kernel, t, pred1, fit2){
+imputer_DNA <- function(XX, yy, kernel=kernel, t, pred1, fit2){
+
+  if (!is.list(XX) || is.null(XX$X_star)) stop("imputer_DNA: 'XX' must be a list containing 'X_star'.")
+  if (!is.list(yy) || is.null(yy$y_list)) stop("imputer_DNA: 'yy' must be a valid output list.")
+  if (!is.list(pred1) || is.null(pred1$mu) || is.null(pred1$cov)) stop("imputer_DNA: 'pred1' must contain 'mu' and 'cov' (ensure predict was run with cov.out=TRUE).")
+  if (!is.numeric(t)) stop("imputer_DNA: 't' must be a numeric vector of tuning parameters.")
+  if (!is.list(fit2) || is.null(fit2$K) || is.null(fit2$mu.hat)) {
+    stop("imputer_DNA: 'fit2' must be a valid fitted object (missing K or hyperparameters).")
+  }
 
   L <- length(XX$X_star)
   X <- fit2$X
   y <- fit2$y
   K <- fit2$K
   g <- fit2$g
-  K <- K + diag(g, length(y))
 
   n_list <- sapply(yy$y_list, length)
   n_star <- sapply(yy$y_star, length)
@@ -46,12 +53,10 @@ imputer <- function(XX, yy, kernel=kernel, t, pred1, fit2){
   ncum_tilde <- c(0,cumsum(n_tilde[2:(L-1)])) # cum sum of n_tilde
 
   X_m1 <- do.call(rbind, XX$X_star[-1])
-  Y_m1 <- do.call(rbind, yy$y_star[-1])
   t_m1 <- unlist(lapply(2:L, function(l) rep(t[l], nrow(XX$X_star[[l]]))))
   params <- c(fit2$theta_x, fit2$theta_t, fit2$beta, fit2$delta)
   mu.hat <- fit2$mu.hat
   tau2hat <- fit2$tau2hat
-
 
   # Draw from prior distribution
   yy$y_tilde[[1]] <- t(mvtnorm::rmvnorm(1, mean = pred1$mu, sigma = pred1$cov))
@@ -60,14 +65,14 @@ imputer <- function(XX, yy, kernel=kernel, t, pred1, fit2){
   ### sampling from Y_tilde give Y_list
   list_idx <- unlist(mapply(seq, ncum_star[1:(L-1)]+1, ncum_star[1:(L-1)]+n_list[2:L]))
   K_list <- K[list_idx, list_idx] # K corresponding to X_list
-  Ki_list <- solve(K_list)
   K_tilde <- K[-list_idx, -list_idx] # K corresponding to X_tilde
   K_list_tilde <- K[list_idx, -list_idx] # K corresponding to X_list given X_tilde
   y_list <- y[list_idx]
 
-  cond_mean <- mu.hat + t(K_list_tilde) %*% Ki_list %*% (y_list - mu.hat)
-  cond_var <- tau2hat * (K_tilde - t(K_list_tilde) %*% Ki_list %*% K_list_tilde)
-  cond_var <- (cond_var+t(cond_var))/2
+  chol_list <- chol(K_list)
+  cond_mean <- mu.hat + crossprod(K_list_tilde, backsolve(chol_list, forwardsolve(t(chol_list), y_list - mu.hat)))
+  cond_var <- tau2hat * (K_tilde - crossprod(forwardsolve(t(chol_list), K_list_tilde)))
+  cond_var <- (cond_var + t(cond_var)) / 2
 
   y_prior <- t(mvtnorm::rmvnorm(1, mean = cond_mean, sigma = cond_var))
 
@@ -75,20 +80,5 @@ imputer <- function(XX, yy, kernel=kernel, t, pred1, fit2){
     yy$y_tilde[[l]] <- matrix(y_prior[(ncum_tilde[l-1]+1):ncum_tilde[l]],ncol=1)
     yy$y_star[[l]] <- rbind(yy$y_list[[l]], yy$y_tilde[[l]])
   }
-
-  Y_m1 <- do.call(rbind, yy$y_star[-1])
-  Y_mL <- do.call(rbind, lapply(2:L, function(l) {
-    yy$y_star[[l-1]][checkindices(XX$X_star[[l-1]], XX$X_star[[l]]), , drop = FALSE]
-  }))
-  y <- Y_m1
-  X[,ncol(X)] <- Y_mL
-  if(kernel=="sqex"){
-    K <- cor.sep.sqex(X, t=t_m1, param=params) + diag(g, length(y))
-  }else if(kernel=="matern1.5"){
-    K <- cor.sep.matern(X, t=t_m1, param=params, nu=1.5) + diag(g, length(y))
-  }else if(kernel=="matern2.5"){
-    K <- cor.sep.matern(X, t=t_m1, param=params, nu=2.5) + diag(g, length(y))
-  }
-
   return(yy)
 }

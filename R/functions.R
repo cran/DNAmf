@@ -12,6 +12,8 @@
 #'
 
 checknested <- function(XX1, XX2) {
+  if (is.null(dim(XX1))) XX1 <- matrix(XX1, ncol = 1)
+  if (is.null(dim(XX2))) XX2 <- matrix(XX2, ncol = 1)
   checknest <- c()
   for (i in 1:nrow(XX2)) {
     checknest <- c(checknest, suppressWarnings(any(apply(XX1, 1, function(xx) {

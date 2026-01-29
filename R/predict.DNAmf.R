@@ -36,7 +36,7 @@ h1_sqex <- function(x, mu.hat, theta_x, X2, c_i, a, w1.x2, previous_mu, previous
   exp_mu <- exp(-sweep((diff_mu_w1^2 / denom), 2, c_i, `*`))
 
   weights <- a * c_i^((d+1)/2 + delta/beta)
-  pred <- mu.hat + (exp_dist * sqrt_term * exp_mu) %*% weights
+  pred <- mu.hat + crossprod(t(exp_dist * sqrt_term * exp_mu), weights)
 
   return(pred)
 }
@@ -78,7 +78,7 @@ h2_sqex_single <- function(x, mu.hat, theta_x, X2, c_i, a, w1.x2, previous_mu, p
 
   dist <- distance(t(x / sqrt(theta_x[-(d + 1)])), t(t(X2) / sqrt(theta_x[-(d + 1)])))
   v <- exp(-dist * t(c_i))
-  mat1 <- drop(v %o% v)
+  mat1 <- crossprod(v)
 
   # Zeta components
   denom <- theta_x[d + 1] + 2 * c_sum * previous_sig2
@@ -91,7 +91,7 @@ h2_sqex_single <- function(x, mu.hat, theta_x, X2, c_i, a, w1.x2, previous_mu, p
   mat <- mat1 * sqrt_term * exp_term * power_term
 
   # Compute h2
-  quad <- drop(t(a) %*% mat %*% a)
+  quad <- drop(crossprod(a, crossprod(mat, a)))
   trace <- sum(Ci * mat)
   h2_val <- tau2hat - (predy - mu.hat)^2 + quad - tau2hat * trace
   return(pmax(0, h2_val))
@@ -128,7 +128,7 @@ h2_sqex <- function(x, mu.hat, theta_x, X2, c_i, a, w1.x2, previous_mu, previous
   # Precompute terms outside the loop
   c_sum <- outer(c(c_i), c(c_i), "+")
   diff_w1_sq <- drop(outer(w1.x2, w1.x2, "-"))^2
-  c_i_outer <- c_i %*% t(c_i)
+  c_i_outer <- tcrossprod(c_i)
   power_term <- (c_i_outer)^((d+1)/2 + delta/beta)
 
   # Apply h2_single to each test point
@@ -174,7 +174,7 @@ h1_matern <- function(x, mu.hat, theta_x, X2, c_i, nu, a, w1.x2, previous_mu, pr
                             theta = theta_x[d+1], nu = nu), nrow(x), nrow(X2))
 
   weights <- a * c_i^((d + 1) + 2 * delta / beta)
-  pred <- mu.hat + rowSums((dist_matrix * xi_matrix) %*% weights)
+  pred <- mu.hat + rowSums(crossprod(t(dist_matrix * xi_matrix), weights))
 
   return(pred)
 }
@@ -212,7 +212,7 @@ h2_matern_single <- function(x, mu.hat, theta_x, X2, c_i, nu, a, w1.x2, previous
                              d, delta, beta, tau2hat, Ci, predy, power_term) {
 
   dist <- cor.mat(x, X2, theta_x[-(d + 1)], nu=nu)
-  mat1 <- drop(dist %o% dist)
+  mat1 <- crossprod(dist)
 
   # Zeta components
   zeta_mat <- matrix(zetafun(c1 = rep(c_i, times = nrow(X2)), c2 = rep(c_i, each = nrow(X2)),
@@ -223,7 +223,7 @@ h2_matern_single <- function(x, mu.hat, theta_x, X2, c_i, nu, a, w1.x2, previous
   mat <- mat1 * zeta_mat * power_term
 
   # Compute h2
-  quad <- drop(t(a) %*% mat %*% a)
+  quad <- drop(crossprod(a, crossprod(mat, a)))
   trace <- sum(Ci * mat)
   h2_val <- tau2hat - (predy - mu.hat)^2 + quad - tau2hat * trace
   return(pmax(0, h2_val))
@@ -259,7 +259,7 @@ h2_matern_single <- function(x, mu.hat, theta_x, X2, c_i, nu, a, w1.x2, previous
 
 h2_matern <- function(x, mu.hat, theta_x, X2, c_i, nu, a, w1.x2, previous_mu, previous_sig2, d, delta, beta, tau2hat, Ci, predy) {
   # Precompute terms outside the loop
-  c_i_outer <- c_i %*% t(c_i)
+  c_i_outer <- tcrossprod(c_i)
   power_term <- (c_i_outer)^((d+1) + 2*delta/beta)
 
   # Apply h2_single to each test point
@@ -286,7 +286,7 @@ h2_matern <- function(x, mu.hat, theta_x, X2, c_i, nu, a, w1.x2, previous_mu, pr
 #' @param nlevel The number of fidelity levels \eqn{L}.
 #' @param x A vector or matrix of new input locations to predict.
 #' @param XX A list containing a pseudo-complete inputs \code{X_star}(\eqn{\left\{\mathcal{X}^*_l\right\}_{l=1}^{L}}), an original inputs \code{X_list}(\eqn{\left\{\mathcal{X}_l\right\}_{l=1}^{L}}), and a pseudo inputs \code{X_tilde}(\eqn{\left\{\widetilde{\mathcal{X}}_l\right\}_{l=1}^{L}}) for non-nested design.
-#' @param pseudo_yy A list containing a pseudo-complete outputs \code{y_star}(\eqn{\left\{\mathbf{y}^*_l\right\}_{l=1}^{L}}), an original outputs \code{y_list}(\eqn{\left\{\mathbf{y}_l\right\}_{l=1}^{L}}), and a pseudo outputs \code{y_tilde}(\eqn{\left\{\widetilde{\mathbf{y}}_l\right\}_{l=1}^{L}}) imputed by \code{\link{imputer}}.
+#' @param pseudo_yy A list containing a pseudo-complete outputs \code{y_star}(\eqn{\left\{\mathbf{y}^*_l\right\}_{l=1}^{L}}), an original outputs \code{y_list}(\eqn{\left\{\mathbf{y}_l\right\}_{l=1}^{L}}), and a pseudo outputs \code{y_tilde}(\eqn{\left\{\widetilde{\mathbf{y}}_l\right\}_{l=1}^{L}}) imputed by \code{\link{imputer_DNA}}.
 #'
 #' @return A list of predictive posterior mean and variance for each level containing:
 #' \itemize{
@@ -296,7 +296,16 @@ h2_matern <- function(x, mu.hat, theta_x, X2, c_i, nu, a, w1.x2, previous_mu, pr
 #' }
 #'
 
-closed_form <- function(fit1, fit2, targett, kernel, nn, tt, nlevel, x, XX=NULL, pseudo_yy=NULL){
+closed_form_DNA <- function(fit1, fit2, targett, kernel, nn, tt, nlevel, x, XX=NULL, pseudo_yy=NULL){
+
+  if (!is.list(fit1) || is.null(fit1$X)) stop("closed_form_DNA: 'fit1' must be a valid fitted object.")
+  if (!is.list(fit2) || is.null(fit2$theta_x)) stop("closed_form_DNA: 'fit2' must be a valid fitted object.")
+  if (!is.numeric(targett) || length(targett) != 1) stop("closed_form_DNA: 'targett' must be a single numeric value.")
+  if (!is.numeric(x)) stop("closed_form_DNA: 'x' must be numeric.")
+  if (!is.null(pseudo_yy)) {
+    if (is.null(XX)) stop("closed_form_DNA: 'XX' must be provided when 'pseudo_yy' is not NULL.")
+    if (is.null(pseudo_yy$y_star)) stop("closed_form_DNA: 'pseudo_yy' is malformed.")
+  }
 
   tt <- tt
   TT <- rep(tt[-1],nn[-1])
@@ -336,14 +345,16 @@ closed_form <- function(fit1, fit2, targett, kernel, nn, tt, nlevel, x, XX=NULL,
     }else if(kernel=="matern2.5"){
       K <- cor.sep.matern(cbind(X_m1,Y_mL), t=t_m1, param=c(theta_x,theta_t,beta,delta), nu=2.5)
     }
-    Ci <- solve(K + diag(g, n))
+    K <- K + diag(g, n)
+    chol_K <- chol(K)
+    Ci <- chol2inv(chol_K)
     one.vec <- matrix(1, ncol = 1, nrow = n)
-    mu.hat <- drop((t(one.vec) %*% Ci %*% y) / (t(one.vec) %*% Ci %*% one.vec))
-    tau2hat <- drop(t(y - mu.hat) %*% Ci %*% (y - mu.hat) / n)
+    mu.hat <- drop(crossprod(one.vec, crossprod(Ci, y)) / crossprod(one.vec, crossprod(Ci, one.vec)))
+    tau2hat <- drop(crossprod(y - mu.hat, crossprod(Ci, y - mu.hat)) / n)
     X2 <- X_m1
     w1.x2 <- c(Y_mL)
   }
-  a <- Ci %*% (y - mu.hat)
+  a <- crossprod(Ci, y - mu.hat)
   x <- matrix(x, ncol = d)
   if(kernel=="sqex"){
     pred.fit <- pred.GP(fit1, x)
@@ -419,7 +430,7 @@ closed_form <- function(fit1, fit2, targett, kernel, nn, tt, nlevel, x, XX=NULL,
 #'
 #' @seealso \code{\link{DNAmf}} for the user-level function.
 #'
-#' @details The \code{predict.DNAmf} function internally calls \code{\link{closed_form}},
+#' @details The \code{predict.DNAmf} function internally calls \code{\link{closed_form_DNA}},
 #' which further calls \code{h1_sqex}, \code{h2_sqex}, \code{h2_sqex_single} for \code{kernel="sqex"},
 #' or \code{h1_matern}, \code{h2_matern}, \code{h2_matern_single} for \code{kernel="matern1.5"} or\code{kernel="matern2.5"},
 #' to recursively compute the closed-form posterior mean and variance at each level.
@@ -430,7 +441,7 @@ closed_form <- function(fit1, fit2, targett, kernel, nn, tt, nlevel, x, XX=NULL,
 #'
 #' If the fitted model was constructed with non-nested designs (\code{nested=FALSE}),
 #' the function generates \code{nimpute} sets of imputations for pseudo outputs
-#' via \code{imputer}.
+#' via \code{imputer_DNA}.
 #'
 #' For further details, see Heo, Boutelet, and Sung (2025+, <arXiv:2506.08328>).
 #'
@@ -536,12 +547,25 @@ closed_form <- function(fit1, fit2, targett, kernel, nn, tt, nlevel, x, XX=NULL,
 #' par(oldpar)
 #'
 
-predict.DNAmf <- function(object, x, targett=0, nimpute=50, ...) {
+predict.DNAmf <- function(object, x=NULL, targett=0, nimpute=50, ...) {
+  if (is.null(x)) return(fitted(object))
   t1 <- proc.time()
+  if (!inherits(object, "DNAmf")) stop("The object is not of class \"DNAmf\" \n")
+  if (!is.numeric(x)) stop("'x' must be numeric.")
+  if (!is.numeric(targett) || length(targett) != 1) stop("'targett' must be a single numeric value.")
+  if (!is.numeric(nimpute) || length(nimpute) != 1 || nimpute < 1) stop("'nimpute' must be a positive integer.")
 
-  ### check the object ###
-  if (!inherits(object, "DNAmf")) {
-    stop("The object is not of class \"DNAmf\" \n")
+  d <- ncol(object$fit1$X)
+  if (is.vector(x)) {
+    if (length(x) %% d != 0) {
+      stop(paste0("Input 'x' length must be a multiple of the model dimension (", d, ")."))
+    }
+    x <- matrix(x, ncol = d, byrow = FALSE)
+  } else {
+    x <- as.matrix(x)
+    if (ncol(x) != d) {
+      stop(paste0("Input 'x' must have ", d, " columns (matches model dimension)."))
+    }
   }
 
   ### prediction ###
@@ -554,7 +578,7 @@ predict.DNAmf <- function(object, x, targett=0, nimpute=50, ...) {
   fit2 <- object$fit2
 
   if(object$nested){
-    pred_result <- closed_form(fit1, fit2, targett, kernel=kernel, nn, tt, nlevel, x)
+    pred_result <- closed_form_DNA(fit1, fit2, targett, kernel=kernel, nn, tt, nlevel, x)
   }else{
     XX <- object$XX
     yy <- object$yy
@@ -570,8 +594,8 @@ predict.DNAmf <- function(object, x, targett=0, nimpute=50, ...) {
 
     for (m in 1:nimpute) {
       # Generate imputed dataset for the m-th imputation
-      yy <- imputer(XX, yy, kernel=kernel, tt, pred1, fit2)
-      pred <- closed_form(fit1, fit2, targett, kernel=kernel, nn, tt, nlevel, x, XX, yy)
+      yy <- imputer_DNA(XX, yy, kernel=kernel, tt, pred1, fit2)
+      pred <- closed_form_DNA(fit1, fit2, targett, kernel=kernel, nn, tt, nlevel, x, XX, yy)
 
       sum_mu <- mapply(`+`, sum_mu, pred[mu_names], SIMPLIFY = FALSE)
       sum_mu2_plus_sig2 <- mapply(function(old, mu_vec, sig2_vec) old + mu_vec^2 + sig2_vec,

@@ -1,7 +1,7 @@
 Package: DNAmf
 Type: Package
 Title: Diffusion Non-Additive Model with Tunable Precision
-Version: 0.1.0
+Version: 0.1.1
 Authors@R: c(
 	person(given="Junoh", family="Heo", role=c("aut", "cre"), email="heojunoh@msu.edu"), 	     	person(given="Romain", family="Boutelet", role="aut", email="boutelet@msu.edu"), 	     	person(given="Chih-Li", family="Sung", role="aut", email="sungchih@msu.edu")
 	)
@@ -11,11 +11,11 @@ License: GPL-3
 Encoding: UTF-8
 Imports: plgp, stats, methods, lhs, fields, mvtnorm
 Suggests: RNAmf
-RoxygenNote: 7.3.2
+RoxygenNote: 7.3.3
 NeedsCompilation: no
-Packaged: 2025-06-19 08:33:46 UTC; junoh
+Packaged: 2026-01-23 05:12:59 UTC; junoh
 Author: Junoh Heo [aut, cre],
   Romain Boutelet [aut],
   Chih-Li Sung [aut]
 Repository: CRAN
-Date/Publication: 2025-06-23 11:20:06 UTC
+Date/Publication: 2026-01-29 20:40:13 UTC

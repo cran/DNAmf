@@ -27,8 +27,8 @@
 
 theta_bounds_sqex <- function(X, t, p = 0.05, beta = 0.5, min_cor = 0.1, max_cor = 0.9) {
 
-  Xscaled <- (X - matrix(apply(X, 2, range)[1,], nrow = nrow(X), ncol = ncol(X), byrow = TRUE)) %*%
-    diag(1/(apply(X, 2, range)[2,] - apply(X, 2, range)[1,]), ncol(X))
+  Xscaled <- crossprod(t(X - matrix(apply(X, 2, range)[1,], nrow = nrow(X), ncol = ncol(X), byrow = TRUE)),
+                       diag(1/(apply(X, 2, range)[2,] - apply(X, 2, range)[1,]), ncol(X)))
   tscaled <- t / max(t)
 
   repr_dist_x_low <- quantile(distance(Xscaled)[lower.tri(distance(Xscaled))], p)
@@ -102,8 +102,8 @@ theta_bounds_sqex <- function(X, t, p = 0.05, beta = 0.5, min_cor = 0.1, max_cor
 
 theta_bounds_matern <- function(X, t, nu, p = 0.05, beta = 0.5, min_cor = 0.1, max_cor = 0.9) {
 
-  Xscaled <- (X - matrix(apply(X, 2, range)[1,], nrow = nrow(X), ncol = ncol(X), byrow = TRUE)) %*%
-    diag(1/(apply(X, 2, range)[2,] - apply(X, 2, range)[1,]), ncol(X))
+  Xscaled <- crossprod(t(X - matrix(apply(X, 2, range)[1,], nrow = nrow(X), ncol = ncol(X), byrow = TRUE)),
+                       diag(1/(apply(X, 2, range)[2,] - apply(X, 2, range)[1,]), ncol(X)))
   tscaled <- t / max(t)
 
   repr_dist_x_low <- quantile(distance(Xscaled)[lower.tri(distance(Xscaled))], p)
@@ -177,7 +177,7 @@ cor.sep.sqex <- function(X, x = NULL, t, tnew=NULL, param) {
 
   if (is.null(x)) {
     if(length(unique(t))==1){
-      Tcomponent=1
+      Tcomponent = 1
     }else{
       Tcomponent <- 1/(outer(t, t, "-")^(2)/theta_t + 1)
     }
@@ -188,7 +188,7 @@ cor.sep.sqex <- function(X, x = NULL, t, tnew=NULL, param) {
       stop("Length of mesh size should be the number of rows of inputs")
     }
     if(length(unique(t))==1){
-      Tcomponent=1
+      Tcomponent = 1
     }else{
       Tcomponent <- 1/(outer(t, tnew, "-")^(2)/theta_t + 1)
     }
@@ -322,45 +322,67 @@ cor.sep.matern <- function(X, x = NULL, t, tnew=NULL, param, nu=2.5) {
 GP.nonsep.sqex <- function(X, y, t, g = sqrt(.Machine$double.eps), constant = FALSE,
                            p=0.1, min_cor = 0.02, max_cor = 0.3,
                            init=NULL, lower=NULL, upper=NULL, multi.start=1) { # p=0.05 for hetGP
+  if (!is.numeric(p) || length(p) != 1 || p <= 0 || p >= 1) {
+    stop("GP.nonsep.sqex: 'p' must be a single numeric value between 0 and 1.")
+  }
+  if (!is.numeric(min_cor) || length(min_cor) != 1 || min_cor <= 0 || min_cor >= 1) {
+    stop("GP.nonsep.sqex: 'min_cor' must be a single numeric value between 0 and 1.")
+  }
+  if (!is.numeric(max_cor) || length(max_cor) != 1 || max_cor <= 0 || max_cor >= 1) {
+    stop("GP.nonsep.sqex: 'max_cor' must be a single numeric value between 0 and 1.")
+  }
+  if (min_cor >= max_cor) {
+    stop("GP.nonsep.sqex: 'min_cor' must be strictly less than 'max_cor'.")
+  }
+  if (!is.null(init) && !is.numeric(init)) stop("GP.nonsep.sqex: 'init' must be numeric.")
+  if (!is.null(lower) && !is.numeric(lower)) stop("GP.nonsep.sqex: 'lower' must be numeric.")
+  if (!is.null(upper) && !is.numeric(upper)) stop("GP.nonsep.sqex: 'upper' must be numeric.")
+
+  if (is.null(dim(X))) X <- matrix(X, ncol = 1)
+  y <- as.matrix(y)
+  n <- nrow(X); d <- ncol(X)
+
+  if (!is.numeric(t)) stop("GP.nonsep.sqex: 't' must be numeric.")
+  if (length(t) != n) stop(paste0("GP.nonsep.sqex: Length of 't' (", length(t), ") must match rows of 'X' (", n, ")."))
+
+  theta_bounds <- theta_bounds_sqex(X, t, p = p, min_cor = min_cor, max_cor = max_cor)
+
+  if(is.null(lower)) {
+    Xlower <- theta_bounds$lower * (apply(X, 2, range)[2,] - apply(X, 2, range)[1,])^2
+    tlower <- 1e-2 * max(t) # theta_bounds_t$lower * (max(max(t)-min(t), g))^2
+    lower <- c(Xlower, tlower, g, 0.5)
+  }
+  if(is.null(upper)) {
+    Xupper <- theta_bounds$upper * (apply(X, 2, range)[2,] - apply(X, 2, range)[1,])^2
+    tupper <- 1e1 * max(t) # theta_bounds_t$upper * (max(max(t)-min(t), g))^2
+    upper <- c(Xupper, tupper, 1-g, 2-g)
+  }
+  if(is.null(init)) {
+    init <- c(sqrt(lower*upper)[-c(length(lower)-1, length(lower))], 0.5, 1)
+  }
+
+  lower[init < lower] <- init[init < lower]
+  upper[init > upper] <- init[init > upper]
+
   if (constant) {
-    if (is.null(dim(X))) X <- matrix(X, ncol = 1)
-
-    theta_bounds <- theta_bounds_sqex(X, t, p = p, min_cor = min_cor, max_cor = max_cor)
-
-    if(is.null(lower)) {
-      Xlower <- theta_bounds$lower * (apply(X, 2, range)[2,] - apply(X, 2, range)[1,])^2
-      tlower <- 1e-2 * max(t) # theta_bounds_t$lower * (max(max(t)-min(t), g))^2
-      lower <- c(Xlower, tlower, g, 0.5)
-    }
-    if(is.null(upper)) {
-      Xupper <- theta_bounds$upper * (apply(X, 2, range)[2,] - apply(X, 2, range)[1,])^2
-      tupper <- 1e1 * max(t) # theta_bounds_t$upper * (max(max(t)-min(t), g))^2
-      upper <- c(Xupper, tupper, 1-g, 2-g)
-    }
-    if(is.null(init)) {
-      init <- c(sqrt(lower*upper)[-c(length(lower)-1, length(lower))], 0.5, 1)
-    }
-
-    lower[init < lower] <- init[init < lower]
-    upper[init > upper] <- init[init > upper]
-
-    n <- nrow(X)
+    one.vec <- matrix(1, ncol = 1, nrow = n)
 
     nlsep <- function(par, X, Y, tt) {
       K <- cor.sep.sqex(X, t=tt, param=par)
-      Ki <- solve(K + diag(g, n))
-      ldetK <- determinant(K + diag(g, n), logarithm = TRUE)$modulus
+      K <- K + diag(g, n)
+      chol_K <- chol(K)
+      ldetK <- 2 * sum(log(diag(chol_K)))
 
-      one.vec <- matrix(1, ncol = 1, nrow = n)
-      mu.hat <- drop((t(one.vec) %*% Ki %*% Y) / (t(one.vec) %*% Ki %*% one.vec))
+      KinvY <- backsolve(chol_K, forwardsolve(t(chol_K), Y))
+      Kinv1 <- backsolve(chol_K, forwardsolve(t(chol_K), one.vec))
+      mu.hat <- drop(crossprod(one.vec, KinvY) / crossprod(one.vec, Kinv1))
+      tau2hat <- drop(crossprod(Y - mu.hat, KinvY - mu.hat * Kinv1) / n)
 
-      tau2hat <- drop(t(Y - mu.hat) %*% Ki %*% (Y - mu.hat) / n)
       ll <- -(n / 2) * log(tau2hat) - (1 / 2) * ldetK
       return(drop(-ll))
     }
 
     gradnlsep <- function(par, X, Y, tt) {
-      d <-ncol(X)
       dd <- d-1
       n <- nrow(X)
       theta <- par[1:d]
@@ -369,12 +391,12 @@ GP.nonsep.sqex <- function(X, y, t, g = sqrt(.Machine$double.eps), constant = FA
       delta <- par[d+3]
 
       K <- cor.sep.sqex(X, t=tt, param=par)
-      Ki <- solve(K + diag(g, n))
+      K <- K + diag(g, n)
+      chol_K <- chol(K)
+      Ki <- chol2inv(chol_K)
+      mu.hat <- drop(crossprod(one.vec, crossprod(Ki, Y)) / crossprod(one.vec, crossprod(Ki, one.vec)))
 
-      one.vec <- matrix(1, ncol = 1, nrow = n)
-      mu.hat <- drop((t(one.vec) %*% Ki %*% Y) / (t(one.vec) %*% Ki %*% one.vec))
-
-      KiY <- Ki %*% (Y - mu.hat)
+      Ki_resid <- crossprod(Ki, Y - mu.hat)
 
       Rt <- sqrt(distance(tt / sqrt(theta_t)))
       u <- (1 + Rt^2)^(-1)
@@ -393,18 +415,18 @@ GP.nonsep.sqex <- function(X, y, t, g = sqrt(.Machine$double.eps), constant = FA
 
       for (i in 1:d) {
         dk_dtheta_i <- -distance(X[,i] / theta[i]) * dk_dv
-        dlltheta[i] <- (n / 2) * t(KiY) %*% dk_dtheta_i %*% KiY / (t(Y) %*% KiY) - (1 / 2) * sum(diag(Ki %*% dk_dtheta_i))
+        dlltheta[i] <- (n / 2) * crossprod(t(crossprod(Ki_resid, dk_dtheta_i)), Ki_resid) / crossprod(Y, Ki_resid) - (1 / 2) * sum(Ki * dk_dtheta_i)
       }
 
-      dlltheta[d+1] <- (n / 2) * t(KiY) %*% dk_dtheta_t %*% KiY / (t(Y) %*% KiY) - (1 / 2) * sum(diag(Ki %*% dk_dtheta_t))
-      dlltheta[d+2] <- (n / 2) * t(KiY) %*% dk_dbeta %*% KiY / (t(Y) %*% KiY) - (1 / 2) * sum(diag(Ki %*% dk_dbeta))
-      dlltheta[d+3] <- (n / 2) * t(KiY) %*% dk_ddelta %*% KiY / (t(Y) %*% KiY) - (1 / 2) * sum(diag(Ki %*% dk_ddelta))
+      dlltheta[d+1] <- (n / 2) * crossprod(t(crossprod(Ki_resid, dk_dtheta_t)), Ki_resid) / crossprod(Y, Ki_resid) - (1 / 2) * sum(Ki * dk_dtheta_t)
+      dlltheta[d+2] <- (n / 2) * crossprod(t(crossprod(Ki_resid, dk_dbeta)), Ki_resid) / crossprod(Y, Ki_resid) - (1 / 2) * sum(Ki * dk_dbeta)
+      dlltheta[d+3] <- (n / 2) * crossprod(t(crossprod(Ki_resid, dk_ddelta)), Ki_resid) / crossprod(Y, Ki_resid) - (1 / 2) * sum(Ki * dk_ddelta)
 
       return(-c(dlltheta))
     }
 
     if(multi.start > 1){
-      start <- randomLHS(multi.start - 1, ncol(X)+3)
+      start <- randomLHS(multi.start - 1, d+3)
       start <- t(t(start) * (upper - lower) + lower)
       start <- rbind(init, start)
       for(i in 1:nrow(start)) {
@@ -423,55 +445,56 @@ GP.nonsep.sqex <- function(X, y, t, g = sqrt(.Machine$double.eps), constant = FA
                    X = X, Y = y, tt = t)
     }
 
-    theta_x <- out$par[1:ncol(X)]
-    theta_t <- out$par[ncol(X)+1]
-    beta <- out$par[ncol(X)+2]
-    delta <- out$par[ncol(X)+3]
-    K <- cor.sep.sqex(X, t=t, param=out$par)
-    Ki <- solve(K + diag(g, n))
-    one.vec <- matrix(1, ncol = 1, nrow = n)
-    mu.hat <- drop((t(one.vec) %*% Ki %*% y) / (t(one.vec) %*% Ki %*% one.vec))
-    tau2hat <- drop(t(y - mu.hat) %*% Ki %*% (y - mu.hat) / nrow(X))
+    theta_x <- out$par[1:d]; theta_t <- out$par[d+1]; beta <- out$par[d+2]; delta <- out$par[d+3]
+    K <- cor.sep.sqex(X, t=t, param=out$par) + diag(g, n)
+    Ki <- chol2inv(chol(K))
+    mu.hat <- drop(crossprod(one.vec, crossprod(Ki, y)) / crossprod(one.vec, crossprod(Ki, one.vec)))
+
+    theo_bound <- log(sum(abs(crossprod(Ki, (y - mu.hat))))) / log((0 - max(t))^2/theta_t + 1) - g * (d / 2 + 1)
+    if(theo_bound < 0.5 && abs(delta - 0.5) < 1e-3) {
+      lower[d+3] <- max(theo_bound, g) # Ensure it doesn't go below 0 or g
+      if(multi.start > 1){
+        start <- randomLHS(multi.start - 1, d+3)
+        start <- t(t(start) * (upper - lower) + lower)
+        start <- rbind(init, start)
+        for(i in 1:nrow(start)) {
+          outi <- optim(start[i,], nlsep, gradnlsep,
+                        method = "L-BFGS-B", lower = lower, upper = upper,
+                        X = X, Y = y, tt = t)
+          if(i == 1) {
+            out <- outi
+          }else if(outi$value < out$value) {
+            out <- outi
+          }
+        }
+      }else{
+        out <- optim(init, nlsep, gradnlsep,
+                     method = "L-BFGS-B", lower = lower, upper = upper,
+                     X = X, Y = y, tt = t)
+      }
+      theta_x <- out$par[1:d]; theta_t <- out$par[d+1]; beta <- out$par[d+2]; delta <- out$par[d+3]
+      K <- cor.sep.sqex(X, t=t, param=out$par) + diag(g, n)
+      Ki <- chol2inv(chol(K))
+      mu.hat <- drop(crossprod(one.vec, crossprod(Ki, y)) / crossprod(one.vec, crossprod(Ki, one.vec)))
+    }
+    tau2hat <- drop(crossprod((y - mu.hat), crossprod(Ki, (y - mu.hat))) / n)
 
     return(list(K = K, Ki = Ki, X = X, y = y, t=t, theta_x=theta_x, theta_t=theta_t, beta=beta, delta=delta, g = g, mu.hat = mu.hat, tau2hat = tau2hat, constant = constant))
   } else {
-    if (is.null(dim(X))) X <- matrix(X, ncol = 1)
-
-    theta_bounds <- theta_bounds_sqex(X, t, p = p, min_cor = min_cor, max_cor = max_cor)
-
-    if(is.null(lower)) {
-      Xlower <- theta_bounds$lower * (apply(X, 2, range)[2,] - apply(X, 2, range)[1,])^2
-      tlower <- 1e-2 * max(t) # theta_bounds_t$lower * (max(max(t)-min(t), g))^2
-      lower <- c(Xlower, tlower, g, 0.5)
-    }
-    if(is.null(upper)) {
-      Xupper <- theta_bounds$upper * (apply(X, 2, range)[2,] - apply(X, 2, range)[1,])^2
-      tupper <- 1e1 * max(t) # theta_bounds_t$upper * (max(max(t)-min(t), g))^2
-      upper <- c(Xupper, tupper, 1-g, 2-g)
-    }
-    if(is.null(init)) {
-      init <- c(sqrt(lower*upper)[-c(length(lower)-1, length(lower))], 0.5, 1)
-    }
-
-    lower[init < lower] <- init[init < lower]
-    upper[init > upper] <- init[init > upper]
-
-    n <- nrow(X)
 
     nlsep <- function(par, X, Y, tt) {
       K <- cor.sep.sqex(X, t=tt, param=par)
-      Ki <- solve(K + diag(g, n))
-      ldetK <- determinant(K + diag(g, n), logarithm = TRUE)$modulus
+      K <- K + diag(g, n)
+      chol_K <- chol(K)
+      ldetK <- 2 * sum(log(diag(chol_K)))
 
-      mu.hat <- 0
+      KinvY <- backsolve(chol_K, forwardsolve(t(chol_K), Y))
 
-      tau2hat <- drop(t(Y - mu.hat) %*% Ki %*% (Y - mu.hat) / n)
-      ll <- -(n / 2) * log(tau2hat) - (1 / 2) * ldetK
+      ll <- -(n / 2) * log(drop(crossprod(Y, KinvY))) - (1 / 2) * ldetK
       return(drop(-ll))
     }
 
     gradnlsep <- function(par, X, Y, tt) {
-      d <-ncol(X)
       dd <- d-1
       n <- nrow(X)
       theta <- par[1:d]
@@ -480,11 +503,11 @@ GP.nonsep.sqex <- function(X, y, t, g = sqrt(.Machine$double.eps), constant = FA
       delta <- par[d+3]
 
       K <- cor.sep.sqex(X, t=tt, param=par)
-      Ki <- solve(K + diag(g, n))
+      K <- K + diag(g, n)
+      chol_K <- chol(K)
+      Ki <- chol2inv(chol_K)
 
-      mu.hat <- 0
-
-      KiY <- Ki %*% (Y - mu.hat)
+      Ki_resid <- crossprod(Ki, Y)
 
       Rt <- sqrt(distance(tt / sqrt(theta_t)))
       u <- (1 + Rt^2)^(-1)
@@ -504,18 +527,18 @@ GP.nonsep.sqex <- function(X, y, t, g = sqrt(.Machine$double.eps), constant = FA
 
       for (i in 1:d) {
         dk_dtheta_i <- -distance(X[,i] / theta[i]) * dk_dv
-        dlltheta[i] <- (n / 2) * t(KiY) %*% dk_dtheta_i %*% KiY / (t(Y) %*% KiY) - (1 / 2) * sum(diag(Ki %*% dk_dtheta_i))
+        dlltheta[i] <- (n / 2) * crossprod(t(crossprod(Ki_resid, dk_dtheta_i)), Ki_resid) / crossprod(Y, Ki_resid) - (1 / 2) * sum(Ki * dk_dtheta_i)
       }
 
-      dlltheta[d+1] <- (n / 2) * t(KiY) %*% dk_dtheta_t %*% KiY / (t(Y) %*% KiY) - (1 / 2) * sum(diag(Ki %*% dk_dtheta_t))
-      dlltheta[d+2] <- (n / 2) * t(KiY) %*% dk_dbeta %*% KiY / (t(Y) %*% KiY) - (1 / 2) * sum(diag(Ki %*% dk_dbeta))
-      dlltheta[d+3] <- (n / 2) * t(KiY) %*% dk_ddelta %*% KiY / (t(Y) %*% KiY) - (1 / 2) * sum(diag(Ki %*% dk_ddelta))
+      dlltheta[d+1] <- (n / 2) * crossprod(t(crossprod(Ki_resid, dk_dtheta_t)), Ki_resid) / crossprod(Y, Ki_resid) - (1 / 2) * sum(Ki * dk_dtheta_t)
+      dlltheta[d+2] <- (n / 2) * crossprod(t(crossprod(Ki_resid, dk_dbeta)), Ki_resid) / crossprod(Y, Ki_resid) - (1 / 2) * sum(Ki * dk_dbeta)
+      dlltheta[d+3] <- (n / 2) * crossprod(t(crossprod(Ki_resid, dk_ddelta)), Ki_resid) / crossprod(Y, Ki_resid) - (1 / 2) * sum(Ki * dk_ddelta)
 
       return(-c(dlltheta))
     }
 
     if(multi.start > 1){
-      start <- randomLHS(multi.start - 1, ncol(X)+3)
+      start <- randomLHS(multi.start - 1, d+3)
       start <- t(t(start) * (upper - lower) + lower)
       start <- rbind(init, start)
       for(i in 1:nrow(start)) {
@@ -534,14 +557,39 @@ GP.nonsep.sqex <- function(X, y, t, g = sqrt(.Machine$double.eps), constant = FA
                    X = X, Y = y, tt = t)
     }
 
-    theta_x <- out$par[1:ncol(X)]
-    theta_t <- out$par[ncol(X)+1]
-    beta <- out$par[ncol(X)+2]
-    delta <- out$par[ncol(X)+3]
-    K <- cor.sep.sqex(X, t=t, param=out$par)
-    Ki <- solve(K + diag(g, n))
+    theta_x <- out$par[1:d]; theta_t <- out$par[d+1]; beta <- out$par[d+2]; delta <- out$par[d+3]
+    K <- cor.sep.sqex(X, t=t, param=out$par) + diag(g, n)
+    Ki <- chol2inv(chol(K))
     mu.hat <- 0
-    tau2hat <- drop(t(y - mu.hat) %*% Ki %*% (y - mu.hat) / nrow(X))
+
+    theo_bound <- log(sum(abs(crossprod(Ki, (y - mu.hat))))) / log((0 - max(t))^2/theta_t + 1) - g * (d / 2 + 1)
+    if(theo_bound < 0.5 && abs(delta - 0.5) < 1e-3) {
+      lower[d+3] <- max(theo_bound, g) # Ensure it doesn't go below 0 or g
+      if(multi.start > 1){
+        start <- randomLHS(multi.start - 1, d+3)
+        start <- t(t(start) * (upper - lower) + lower)
+        start <- rbind(init, start)
+        for(i in 1:nrow(start)) {
+          outi <- optim(start[i,], nlsep, gradnlsep,
+                        method = "L-BFGS-B", lower = lower, upper = upper,
+                        X = X, Y = y, tt = t)
+          if(i == 1) {
+            out <- outi
+          }else if(outi$value < out$value) {
+            out <- outi
+          }
+        }
+      }else{
+        out <- optim(init, nlsep, gradnlsep,
+                     method = "L-BFGS-B", lower = lower, upper = upper,
+                     X = X, Y = y, tt = t)
+      }
+      theta_x <- out$par[1:d]; theta_t <- out$par[d+1]; beta <- out$par[d+2]; delta <- out$par[d+3]
+      K <- cor.sep.sqex(X, t=t, param=out$par) + diag(g, n)
+      Ki <- chol2inv(chol(K))
+      mu.hat <- 0
+    }
+    tau2hat <- drop(crossprod(y, crossprod(Ki, y)) / n)
 
     return(list(K = K, Ki = Ki, X = X, y = y, t=t, theta_x=theta_x, theta_t=theta_t, beta=beta, delta=delta, g = g, mu.hat = mu.hat, tau2hat = tau2hat, constant = constant))
   }
@@ -592,39 +640,65 @@ GP.nonsep.sqex <- function(X, y, t, g = sqrt(.Machine$double.eps), constant = FA
 GP.nonsep.matern <- function(X, y, nu, t, g = sqrt(.Machine$double.eps), constant = FALSE,
                              p=0.1, min_cor = 0.02, max_cor = 0.3,
                              init=NULL, lower=NULL, upper=NULL, multi.start=1) {
+  if (!nu %in% c(1.5, 2.5)) {
+    stop("matGP: 'nu' must be one of 1.5 or 2.5.")
+  }
+  if (!is.numeric(p) || length(p) != 1 || p <= 0 || p >= 1) {
+    stop("GP: 'p' must be a single numeric value between 0 and 1.")
+  }
+  if (!is.numeric(min_cor) || length(min_cor) != 1 || min_cor <= 0 || min_cor >= 1) {
+    stop("GP: 'min_cor' must be a single numeric value between 0 and 1.")
+  }
+  if (!is.numeric(max_cor) || length(max_cor) != 1 || max_cor <= 0 || max_cor >= 1) {
+    stop("GP: 'max_cor' must be a single numeric value between 0 and 1.")
+  }
+  if (min_cor >= max_cor) {
+    stop("GP: 'min_cor' must be strictly less than 'max_cor'.")
+  }
+  if (!is.null(init) && !is.numeric(init)) stop("GP: 'init' must be numeric.")
+  if (!is.null(lower) && !is.numeric(lower)) stop("GP: 'lower' must be numeric.")
+  if (!is.null(upper) && !is.numeric(upper)) stop("GP: 'upper' must be numeric.")
+
+  if (is.null(dim(X))) X <- matrix(X, ncol = 1)
+  y <- as.matrix(y)
+  n <- nrow(X)
+
+  if (!is.numeric(t)) stop("GP: 't' must be numeric.")
+  if (length(t) != n) stop(paste0("GP: Length of 't' (", length(t), ") must match rows of 'X' (", n, ")."))
+
+  theta_bounds <- theta_bounds_matern(X, t, nu=nu, p = p, min_cor = min_cor, max_cor = max_cor)
+
+  if(is.null(lower)) {
+    Xlower <- theta_bounds$lower * (apply(X, 2, range)[2,] - apply(X, 2, range)[1,])
+    tlower <- 1e-2 * max(t) # theta_bounds_t$lower * (max(max(t)-min(t), g))^2
+    lower <- c(Xlower, tlower, g, 0.5)
+  }
+  if(is.null(upper)) {
+    Xupper <- theta_bounds$upper * (apply(X, 2, range)[2,] - apply(X, 2, range)[1,])
+    tupper <- 1e1 * max(t) # theta_bounds_t$upper * (max(max(t)-min(t), g))^2
+    upper <- c(Xupper, tupper, 1-g, 2-g)
+  }
+  if(is.null(init)) {
+    init <- c(sqrt(lower*upper)[-c(length(lower)-1, length(lower))], 0.005, 0.5)
+  }
+
+  lower[init < lower] <- init[init < lower]
+  upper[init > upper] <- init[init > upper]
+
   if (constant) {
-    if (is.null(dim(X))) X <- matrix(X, ncol = 1)
-
-    theta_bounds <- theta_bounds_matern(X, t, nu=nu, p = p, min_cor = min_cor, max_cor = max_cor)
-
-    if(is.null(lower)) {
-      Xlower <- theta_bounds$lower * (apply(X, 2, range)[2,] - apply(X, 2, range)[1,])
-      tlower <- 1e-2 * max(t) # theta_bounds_t$lower * (max(max(t)-min(t), g))^2
-      lower <- c(Xlower, tlower, g, 0.5)
-    }
-    if(is.null(upper)) {
-      Xupper <- theta_bounds$upper * (apply(X, 2, range)[2,] - apply(X, 2, range)[1,])
-      tupper <- 1e1 * max(t) # theta_bounds_t$upper * (max(max(t)-min(t), g))^2
-      upper <- c(Xupper, tupper, 0.01-g, 1-g)
-    }
-    if(is.null(init)) {
-      init <- c(sqrt(lower*upper)[-c(length(lower)-1, length(lower))], 0.005, 0.5)
-    }
-
-    lower[init < lower] <- init[init < lower]
-    upper[init > upper] <- init[init > upper]
-
-    n <- nrow(X)
+    one.vec <- matrix(1, ncol = 1, nrow = n)
 
     nlsep <- function(par, X, Y, tt, nu) {
       K <- cor.sep.matern(X, t=tt, param=par, nu=nu)
-      Ki <- solve(K + diag(g, n))
-      ldetK <- determinant(K + diag(g, n), logarithm = TRUE)$modulus
+      K <- K + diag(g, n)
+      chol_K <- chol(K)
+      ldetK <- 2 * sum(log(diag(chol_K)))
 
-      one.vec <- matrix(1, ncol = 1, nrow = n)
-      mu.hat <- drop((t(one.vec) %*% Ki %*% Y) / (t(one.vec) %*% Ki %*% one.vec))
+      KinvY <- backsolve(chol_K, forwardsolve(t(chol_K), Y))
+      Kinv1 <- backsolve(chol_K, forwardsolve(t(chol_K), one.vec))
+      mu.hat <- drop(crossprod(one.vec, KinvY) / crossprod(one.vec, Kinv1))
+      tau2hat <- drop(crossprod(Y - mu.hat, KinvY - mu.hat * Kinv1) / n)
 
-      tau2hat <- drop(t(Y - mu.hat) %*% Ki %*% (Y - mu.hat) / n)
       ll <- -(n / 2) * log(tau2hat) - (1 / 2) * ldetK
       return(drop(-ll))
     }
@@ -639,18 +713,18 @@ GP.nonsep.matern <- function(X, y, nu, t, g = sqrt(.Machine$double.eps), constan
       delta <- par[d+3]
 
       K <- cor.sep.matern(X, t=tt, param=par, nu=nu)
-      Ki <- solve(K + diag(g, n))
+      K <- K + diag(g, n)
+      chol_K <- chol(K)
+      Ki <- chol2inv(chol_K)
+      mu.hat <- drop(crossprod(one.vec, crossprod(Ki, Y)) / crossprod(one.vec, crossprod(Ki, one.vec)))
 
-      one.vec <- matrix(1, ncol = 1, nrow = n)
-      mu.hat <- drop((t(one.vec) %*% Ki %*% Y) / (t(one.vec) %*% Ki %*% one.vec))
-
-      KiY <- Ki %*% (Y - mu.hat)
+      Ki_resid <- crossprod(Ki, Y - mu.hat)
 
       Rt <- sqrt(distance(tt / sqrt(theta_t)))
       u <- (1 + Rt^2)^(-1 / 2)
 
       if (nu == 1.5) {
-        v <- sqrt(3) * sapply(1:d, function(i) distance(X[, i])/theta[i])
+        v <- sqrt(3) * sapply(1:d, function(i) sqrt(distance(X[, i]))/theta[i])
         u_beta_2_v <- c(u^(beta/2)) * v
 
         du_dtheta_t <- (Rt^2 / theta_t) * u^2
@@ -667,14 +741,14 @@ GP.nonsep.matern <- function(X, y, nu, t, g = sqrt(.Machine$double.eps), constan
         for (i in 1:d) {
           dk_dv <- -K * matrix(dk_dv_without_K[,i], ncol=n)
           dk_dtheta_i <- - matrix(v[,i], ncol=n) / theta[i] * dk_dv
-          dlltheta[i] <- (n / 2) * t(KiY) %*% dk_dtheta_i %*% KiY / (t(Y) %*% KiY) - (1 / 2) * sum(diag(Ki %*% dk_dtheta_i))
+          dlltheta[i] <- (n / 2) * crossprod(t(crossprod(Ki_resid, dk_dtheta_i)), Ki_resid) / crossprod(Y, Ki_resid) - (1 / 2) * sum(Ki * dk_dtheta_i)
         }
 
-        dlltheta[d+1] <- (n / 2) * t(KiY) %*% dk_dtheta_t %*% KiY / (t(Y) %*% KiY) - (1 / 2) * sum(diag(Ki %*% dk_dtheta_t))
-        dlltheta[d+2] <- (n / 2) * t(KiY) %*% dk_dbeta %*% KiY / (t(Y) %*% KiY) - (1 / 2) * sum(diag(Ki %*% dk_dbeta))
-        dlltheta[d+3] <- (n / 2) * t(KiY) %*% dk_ddelta %*% KiY / (t(Y) %*% KiY) - (1 / 2) * sum(diag(Ki %*% dk_ddelta))
+        dlltheta[d+1] <- (n / 2) * crossprod(t(crossprod(Ki_resid, dk_dtheta_t)), Ki_resid) / crossprod(Y, Ki_resid) - (1 / 2) * sum(Ki * dk_dtheta_t)
+        dlltheta[d+2] <- (n / 2) * crossprod(t(crossprod(Ki_resid, dk_dbeta)), Ki_resid) / crossprod(Y, Ki_resid) - (1 / 2) * sum(Ki * dk_dbeta)
+        dlltheta[d+3] <- (n / 2) * crossprod(t(crossprod(Ki_resid, dk_ddelta)), Ki_resid) / crossprod(Y, Ki_resid) - (1 / 2) * sum(Ki * dk_ddelta)
       } else {
-        v <- sqrt(5) * sapply(1:d, function(i) distance(X[, i])/theta[i])
+        v <- sqrt(5) * sapply(1:d, function(i) sqrt(distance(X[, i]))/theta[i])
         u_beta_2_v <- c(u^(beta/2)) * v
 
         du_dtheta_t <- (Rt^2 / theta_t) * u^2
@@ -691,14 +765,13 @@ GP.nonsep.matern <- function(X, y, nu, t, g = sqrt(.Machine$double.eps), constan
         for (i in 1:d) {
           dk_dv <- -K * matrix(dk_dv_without_K[,i], ncol=n)
           dk_dtheta_i <- - matrix(v[,i], ncol=n) / theta[i] * dk_dv
-          dlltheta[i] <- (n / 2) * t(KiY) %*% dk_dtheta_i %*% KiY / (t(Y) %*% KiY) - (1 / 2) * sum(diag(Ki %*% dk_dtheta_i))
+          dlltheta[i] <- (n / 2) * crossprod(t(crossprod(Ki_resid, dk_dtheta_i)), Ki_resid) / crossprod(Y, Ki_resid) - (1 / 2) * sum(Ki * dk_dtheta_i)
         }
 
-        dlltheta[d+1] <- (n / 2) * t(KiY) %*% dk_dtheta_t %*% KiY / (t(Y) %*% KiY) - (1 / 2) * sum(diag(Ki %*% dk_dtheta_t))
-        dlltheta[d+2] <- (n / 2) * t(KiY) %*% dk_dbeta %*% KiY / (t(Y) %*% KiY) - (1 / 2) * sum(diag(Ki %*% dk_dbeta))
-        dlltheta[d+3] <- (n / 2) * t(KiY) %*% dk_ddelta %*% KiY / (t(Y) %*% KiY) - (1 / 2) * sum(diag(Ki %*% dk_ddelta))
+        dlltheta[d+1] <- (n / 2) * crossprod(t(crossprod(Ki_resid, dk_dtheta_t)), Ki_resid) / crossprod(Y, Ki_resid) - (1 / 2) * sum(Ki * dk_dtheta_t)
+        dlltheta[d+2] <- (n / 2) * crossprod(t(crossprod(Ki_resid, dk_dbeta)), Ki_resid) / crossprod(Y, Ki_resid) - (1 / 2) * sum(Ki * dk_dbeta)
+        dlltheta[d+3] <- (n / 2) * crossprod(t(crossprod(Ki_resid, dk_ddelta)), Ki_resid) / crossprod(Y, Ki_resid) - (1 / 2) * sum(Ki * dk_ddelta)
       }
-
       return(-c(dlltheta))
     }
 
@@ -726,45 +799,24 @@ GP.nonsep.matern <- function(X, y, nu, t, g = sqrt(.Machine$double.eps), constan
     beta <- out$par[ncol(X)+2]
     delta <- out$par[ncol(X)+3]
     K <- cor.sep.matern(X, t=t, param=out$par, nu=nu)
-    Ki <- solve(K + diag(g, n))
+    K <- K + diag(g, n)
+    Ki <- chol2inv(chol(K))
     one.vec <- matrix(1, ncol = 1, nrow = n)
-    mu.hat <- drop((t(one.vec) %*% Ki %*% y) / (t(one.vec) %*% Ki %*% one.vec))
-    tau2hat <- drop(t(y - mu.hat) %*% Ki %*% (y - mu.hat) / nrow(X))
+    mu.hat <- drop(crossprod(one.vec, crossprod(Ki, y)) / crossprod(one.vec, crossprod(Ki, one.vec)))
+    tau2hat <- drop(crossprod((y - mu.hat), crossprod(Ki, (y - mu.hat))) / n)
 
     return(list(K = K, Ki = Ki, X = X, y = y, nu=nu, t=t, theta_x=theta_x, theta_t=theta_t, beta=beta, delta=delta, g = g, mu.hat = mu.hat, tau2hat = tau2hat, constant = constant))
   } else {
-    if (is.null(dim(X))) X <- matrix(X, ncol = 1)
-
-    theta_bounds <- theta_bounds_matern(X, t, nu=nu, p = p, min_cor = min_cor, max_cor = max_cor)
-
-    if(is.null(lower)) {
-      Xlower <- theta_bounds$lower * (apply(X, 2, range)[2,] - apply(X, 2, range)[1,])
-      tlower <- 1e-2 * max(t) # theta_bounds_t$lower * (max(max(t)-min(t), g))^2
-      lower <- c(Xlower, tlower, g, 0.5)
-    }
-    if(is.null(upper)) {
-      Xupper <- theta_bounds$upper * (apply(X, 2, range)[2,] - apply(X, 2, range)[1,])
-      tupper <- 1e1 * max(t) # theta_bounds_t$upper * (max(max(t)-min(t), g))^2
-      upper <- c(Xupper, tupper, 1-g, 2-g)
-    }
-    if(is.null(init)) {
-      init <- c(sqrt(lower*upper)[-c(length(lower)-1, length(lower))], 0.5, 1)
-    }
-
-    lower[init < lower] <- init[init < lower]
-    upper[init > upper] <- init[init > upper]
-
-    n <- nrow(X)
 
     nlsep <- function(par, X, Y, tt, nu) {
       K <- cor.sep.matern(X, t=tt, param=par, nu=nu)
-      Ki <- solve(K + diag(g, n))
-      ldetK <- determinant(K + diag(g, n), logarithm = TRUE)$modulus
+      K <- K + diag(g, n)
+      chol_K <- chol(K)
+      ldetK <- 2 * sum(log(diag(chol_K)))
 
-      mu.hat <- 0
+      KinvY <- backsolve(chol_K, forwardsolve(t(chol_K), Y))
 
-      tau2hat <- drop(t(Y - mu.hat) %*% Ki %*% (Y - mu.hat) / n)
-      ll <- -(n / 2) * log(tau2hat) - (1 / 2) * ldetK
+      ll <- -(n / 2) * log(drop(crossprod(Y, KinvY))) - (1 / 2) * ldetK
       return(drop(-ll))
     }
 
@@ -778,17 +830,17 @@ GP.nonsep.matern <- function(X, y, nu, t, g = sqrt(.Machine$double.eps), constan
       delta <- par[d+3]
 
       K <- cor.sep.matern(X, t=tt, param=par, nu=nu)
-      Ki <- solve(K + diag(g, n))
+      K <- K + diag(g, n)
+      chol_K <- chol(K)
+      Ki <- chol2inv(chol_K)
 
-      mu.hat <- 0
-
-      KiY <- Ki %*% (Y - mu.hat)
+      Ki_resid <- crossprod(Ki, Y)
 
       Rt <- sqrt(distance(tt / sqrt(theta_t)))
       u <- (1 + Rt^2)^(-1 / 2)
 
       if (nu == 1.5) {
-        v <- sqrt(3) * sapply(1:d, function(i) distance(X[, i])/theta[i])
+        v <- sqrt(3) * sapply(1:d, function(i) sqrt(distance(X[, i]))/theta[i])
         u_beta_2_v <- c(u^(beta/2)) * v
 
         du_dtheta_t <- (Rt^2 / theta_t) * u^2
@@ -805,14 +857,14 @@ GP.nonsep.matern <- function(X, y, nu, t, g = sqrt(.Machine$double.eps), constan
         for (i in 1:d) {
           dk_dv <- -K * matrix(dk_dv_without_K[,i], ncol=n)
           dk_dtheta_i <- - matrix(v[,i], ncol=n) / theta[i] * dk_dv
-          dlltheta[i] <- (n / 2) * t(KiY) %*% dk_dtheta_i %*% KiY / (t(Y) %*% KiY) - (1 / 2) * sum(diag(Ki %*% dk_dtheta_i))
+          dlltheta[i] <- (n / 2) * crossprod(t(crossprod(Ki_resid, dk_dtheta_i)), Ki_resid) / crossprod(Y, Ki_resid) - (1 / 2) * sum(Ki * dk_dtheta_i)
         }
 
-        dlltheta[d+1] <- (n / 2) * t(KiY) %*% dk_dtheta_t %*% KiY / (t(Y) %*% KiY) - (1 / 2) * sum(diag(Ki %*% dk_dtheta_t))
-        dlltheta[d+2] <- (n / 2) * t(KiY) %*% dk_dbeta %*% KiY / (t(Y) %*% KiY) - (1 / 2) * sum(diag(Ki %*% dk_dbeta))
-        dlltheta[d+3] <- (n / 2) * t(KiY) %*% dk_ddelta %*% KiY / (t(Y) %*% KiY) - (1 / 2) * sum(diag(Ki %*% dk_ddelta))
+        dlltheta[d+1] <- (n / 2) * crossprod(t(crossprod(Ki_resid, dk_dtheta_t)), Ki_resid) / crossprod(Y, Ki_resid) - (1 / 2) * sum(Ki * dk_dtheta_t)
+        dlltheta[d+2] <- (n / 2) * crossprod(t(crossprod(Ki_resid, dk_dbeta)), Ki_resid) / crossprod(Y, Ki_resid) - (1 / 2) * sum(Ki * dk_dbeta)
+        dlltheta[d+3] <- (n / 2) * crossprod(t(crossprod(Ki_resid, dk_ddelta)), Ki_resid) / crossprod(Y, Ki_resid) - (1 / 2) * sum(Ki * dk_ddelta)
       } else {
-        v <- sqrt(5) * sapply(1:d, function(i) distance(X[, i])/theta[i])
+        v <- sqrt(5) * sapply(1:d, function(i) sqrt(distance(X[, i]))/theta[i])
         u_beta_2_v <- c(u^(beta/2)) * v
 
         du_dtheta_t <- (Rt^2 / theta_t) * u^2
@@ -829,14 +881,13 @@ GP.nonsep.matern <- function(X, y, nu, t, g = sqrt(.Machine$double.eps), constan
         for (i in 1:d) {
           dk_dv <- -K * matrix(dk_dv_without_K[,i], ncol=n)
           dk_dtheta_i <- - matrix(v[,i], ncol=n) / theta[i] * dk_dv
-          dlltheta[i] <- (n / 2) * t(KiY) %*% dk_dtheta_i %*% KiY / (t(Y) %*% KiY) - (1 / 2) * sum(diag(Ki %*% dk_dtheta_i))
+          dlltheta[i] <- (n / 2) * crossprod(t(crossprod(Ki_resid, dk_dtheta_i)), Ki_resid) / crossprod(Y, Ki_resid) - (1 / 2) * sum(Ki * dk_dtheta_i)
         }
 
-        dlltheta[d+1] <- (n / 2) * t(KiY) %*% dk_dtheta_t %*% KiY / (t(Y) %*% KiY) - (1 / 2) * sum(diag(Ki %*% dk_dtheta_t))
-        dlltheta[d+2] <- (n / 2) * t(KiY) %*% dk_dbeta %*% KiY / (t(Y) %*% KiY) - (1 / 2) * sum(diag(Ki %*% dk_dbeta))
-        dlltheta[d+3] <- (n / 2) * t(KiY) %*% dk_ddelta %*% KiY / (t(Y) %*% KiY) - (1 / 2) * sum(diag(Ki %*% dk_ddelta))
+        dlltheta[d+1] <- (n / 2) * crossprod(t(crossprod(Ki_resid, dk_dtheta_t)), Ki_resid) / crossprod(Y, Ki_resid) - (1 / 2) * sum(Ki * dk_dtheta_t)
+        dlltheta[d+2] <- (n / 2) * crossprod(t(crossprod(Ki_resid, dk_dbeta)), Ki_resid) / crossprod(Y, Ki_resid) - (1 / 2) * sum(Ki * dk_dbeta)
+        dlltheta[d+3] <- (n / 2) * crossprod(t(crossprod(Ki_resid, dk_ddelta)), Ki_resid) / crossprod(Y, Ki_resid) - (1 / 2) * sum(Ki * dk_ddelta)
       }
-
       return(-c(dlltheta))
     }
 
@@ -864,9 +915,10 @@ GP.nonsep.matern <- function(X, y, nu, t, g = sqrt(.Machine$double.eps), constan
     beta <- out$par[ncol(X)+2]
     delta <- out$par[ncol(X)+3]
     K <- cor.sep.matern(X, t=t, param=out$par, nu=nu)
-    Ki <- solve(K + diag(g, n))
+    K <- K + diag(g, n)
+    Ki <- chol2inv(chol(K))
     mu.hat <- 0
-    tau2hat <- drop(t(y) %*% Ki %*% y / n)
+    tau2hat <- drop(crossprod(y, crossprod(Ki, y)) / n)
 
     return(list(K = K, Ki = Ki, X = X, y = y, nu=nu, t=t, theta_x=theta_x, theta_t=theta_t, beta=beta, delta=delta, g = g, mu.hat = mu.hat, tau2hat = tau2hat, constant = constant))
   }
@@ -889,6 +941,7 @@ GP.nonsep.matern <- function(X, y, nu, t, g = sqrt(.Machine$double.eps), constan
 #'
 
 pred.GP.nonsep <- function(fit, xnew, tnew) {
+  if(is.null(fit$Ki) || is.null(fit$theta_x) || is.null(fit$theta_t) || is.null(fit$beta) || is.null(fit$delta)) stop("Invalid fit object passed to pred.GP.nonsep")
   xnew <- as.matrix(xnew)
 
   Ki <- fit$Ki
@@ -896,7 +949,6 @@ pred.GP.nonsep <- function(fit, xnew, tnew) {
   theta_t <- fit$theta_t
   beta <- fit$beta
   delta <- fit$delta
-  g <- fit$g
   X <- fit$X
   y <- fit$y
   t <- fit$t
@@ -906,8 +958,8 @@ pred.GP.nonsep <- function(fit, xnew, tnew) {
   KXX <- cor.sep.sqex(xnew, t=tnew, param=c(theta_x,theta_t,beta,delta))
   KX <- cor.sep.sqex(xnew, X, t=tnew, tnew=t, param=c(theta_x,theta_t,beta,delta))
 
-  mup2 <- mu.hat + KX %*% Ki %*% (y - mu.hat)
-  Sigmap2 <- pmax(0, diag(tau2hat * (KXX - KX %*% Ki %*% t(KX))))
+  mup2 <- mu.hat + crossprod(t(KX), crossprod(Ki, y - mu.hat))
+  Sigmap2 <- pmax(0, diag(tau2hat * (KXX - crossprod(t(KX), tcrossprod(Ki, KX)))))
 
   return(list(mu = mup2, sig2 = Sigmap2))
 }
@@ -929,6 +981,7 @@ pred.GP.nonsep <- function(fit, xnew, tnew) {
 #'
 
 pred.matGP.nonsep <- function(fit, xnew, tnew) {
+  if(is.null(fit$Ki) || is.null(fit$theta_x) || is.null(fit$theta_t) || is.null(fit$beta) || is.null(fit$delta)) stop("Invalid fit object passed to pred.matGP.nonsep")
   xnew <- as.matrix(xnew)
 
   Ki <- fit$Ki
@@ -937,7 +990,6 @@ pred.matGP.nonsep <- function(fit, xnew, tnew) {
   theta_t <- fit$theta_t
   beta <- fit$beta
   delta <- fit$delta
-  g <- fit$g
   X <- fit$X
   y <- fit$y
   t <- fit$t
@@ -947,8 +999,8 @@ pred.matGP.nonsep <- function(fit, xnew, tnew) {
   KXX <- cor.sep.matern(xnew, t=tnew, param=c(theta_x,theta_t,beta,delta), nu=nu)
   KX <- cor.sep.matern(xnew, X, t=tnew, tnew=t, param=c(theta_x,theta_t,beta,delta), nu=nu)
 
-  mup2 <- mu.hat + KX %*% Ki %*% (y - mu.hat)
-  Sigmap2 <- pmax(0, diag(tau2hat * (KXX - KX %*% Ki %*% t(KX))))
+  mup2 <- mu.hat + crossprod(t(KX), crossprod(Ki, y - mu.hat))
+  Sigmap2 <- pmax(0, diag(tau2hat * (KXX - crossprod(t(KX), tcrossprod(Ki, KX)))))
 
   return(list(mu = mup2, sig2 = Sigmap2))
 }

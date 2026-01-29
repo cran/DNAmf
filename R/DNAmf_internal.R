@@ -3,7 +3,7 @@
 #' @description Internal function that performs model fitting for the DNA model.
 #' This function handles both nested and non-nested design using distinct fitting procedures.
 #' In the nested case, parameters are estimated by maximum likelihood.
-#' In the non-nested case, the stochastic EM algorithm is applied using an \code{\link{imputer}} function.
+#' In the non-nested case, the stochastic EM algorithm is applied using an \code{\link{imputer_DNA}} function.
 #'
 #' @seealso \code{\link{DNAmf}} for the user-level function.
 #'
@@ -52,6 +52,7 @@
 DNAmf_internal <- function(X1, y1, X_list, y_list, kernel, t, nn, nested = TRUE, constant = TRUE, fitGP1 = TRUE, init=NULL,
                            n.iter = 50, multi.start = 10, trace = TRUE, g = g, burn.ratio = burn.ratio, ...) {
   time0 <- proc.time()[3]
+  if (length(t) < 2) stop("DNAmf_internal: 't' vector too short.")
 
   if (nested) { # Nested
     X <- X_list
@@ -147,13 +148,13 @@ DNAmf_internal <- function(X1, y1, X_list, y_list, kernel, t, nn, nested = TRUE,
     fit.DNAmf <- DNAmf(X=XX$X_star, y=yy$y_star, kernel=kernel, t=t, fitGP1=FALSE,
                        constant=constant, init = NULL, multi.start=10, ...)
     fit2 <- fit.DNAmf$fit2
-    message(c(fit2$theta_x, fit2$theta_t, fit2$beta, fit2$delta, fit2$mu.hat, fit2$tau2hat))
+    if(trace){
+      cat(sprintf("initial: %s\n", paste(sprintf("%.4e", c(fit2$theta_x, fit2$theta_t, fit2$beta, fit2$delta, fit2$mu.hat, fit2$tau2hat)), collapse = " ")))
+    }
 
     for (j in 1:n.iter) { # Imputation and Maximization
-      if (trace) cat(j, '\n')
-
       # Imputation step; impute y tilde using ESS
-      yy <- imputer(XX, yy, kernel=kernel, t, pred1, fit2)
+      yy <- imputer_DNA(XX, yy, kernel=kernel, t, pred1, fit2)
 
       param.init <- c(fit2$theta_x, fit2$theta_t, fit2$beta, fit2$delta)
       # Maximization step; optimize parameters n.iter times
@@ -164,7 +165,10 @@ DNAmf_internal <- function(X1, y1, X_list, y_list, kernel, t, nn, nested = TRUE,
       if(j > n.burnin){
         param_mat[j-n.burnin,] <- c(fit2$theta_x, fit2$theta_t, fit2$beta, fit2$delta, fit2$mu.hat, fit2$tau2hat)
       }
-      if (trace) message(c(fit2$theta_x, fit2$theta_t, fit2$beta, fit2$delta, fit2$mu.hat, fit2$tau2hat))
+      if (trace) {
+        vals <- c(fit2$theta_x, fit2$theta_t, fit2$beta, fit2$delta, fit2$mu.hat, fit2$tau2hat)
+        cat(sprintf("iter %2d/%d: %s\n", j, n.iter, paste(sprintf("%.4e", vals), collapse = " ")))
+      }
     } # end of j for loop
 
     # average with 75% burn-in

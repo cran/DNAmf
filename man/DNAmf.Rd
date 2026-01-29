@@ -75,7 +75,7 @@ where \eqn{\phi(\cdot, \cdot)} depens on the chosen kernel:
 When the input locations are not nested, the internal \code{makenested} function constructs nested designs as
 \eqn{\mathcal{X}^*_L = \mathcal{X}_L} and
 \eqn{\mathcal{X}^*_l = \mathcal{X}_l \cup \mathcal{X}^*_{l+1}} for \eqn{l = 1, \dots, L-1}.
-The function \code{\link{imputer}} then imputes pseudo outputs \eqn{\widetilde{\mathbf{y}}_l := f_l(\widetilde{\mathcal{X}}_l)}
+The function \code{\link{imputer_DNA}} then imputes pseudo outputs \eqn{\widetilde{\mathbf{y}}_l := f_l(\widetilde{\mathcal{X}}_l)}
 at pseudo inputs \eqn{\widetilde{\mathcal{X}}_l := \mathcal{X}^*_l \setminus \mathcal{X}_l},
 using a stochastic EM algorithm.
 
